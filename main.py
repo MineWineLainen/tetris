@@ -7,8 +7,7 @@ def main():
         game.run()
 
     except Exception as e:
-        print(f"Произошла критическая ошибка: {str(e)}")
-        pygame.quit
+        print(f"Critical error: {str(e)}")
 
     finally:
         pygame.quit()

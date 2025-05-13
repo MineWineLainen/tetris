@@ -174,3 +174,5 @@ cython_debug/
 .pypirc
 
 high_score.txt
+save_game.json
+settings.json
