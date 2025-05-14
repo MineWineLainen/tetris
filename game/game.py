@@ -8,13 +8,18 @@ from .tetromino import Tetromino, TetrominoBag
 from .grid import Grid
 from .settings import Settings
 from .save_game import SaveGame
+from enum import Enum
 
-#Configure logging
-logging.basicConfig(
-    filename="tetris.log",
-    level=logging.ERROR,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+#Logging
+logging.basicConfig(filename="tetris.log", level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s")
+
+#GameState class
+class GameState(Enum):
+    MENU = 1
+    SETTINGS = 2
+    PAUSED = 3
+    PLAYING = 4
+    GAME_OVER = 5
 
 class Game:
     def __init__(self):
@@ -32,11 +37,7 @@ class Game:
         pygame.display.set_caption("Tetris")
 
         #Game state
-        self.running = True
-        self.game_over_flag = False
-        self.in_menu = True
-        self.paused = False
-        self.in_settings = False
+        self.state = GameState.MENU
         self.final_score = 0
         self.high_score = self.load_high_score()
         self.start_time = 0
@@ -72,9 +73,6 @@ class Game:
         #Input delay
         self.move_delay = 150
         self.last_move_time = 0
-
-        #Dirty rectangles
-        self.dirty_rects = []
 
         #Sounds
         self.sounds = {}
@@ -117,30 +115,32 @@ class Game:
 
     def run(self):
         #Run the main game loop
-        while self.running:
+        while True:
             self.clock.tick(FPS)
-            self.dirty_rects = []
-            if self.in_menu:
+            if self.state == GameState.MENU:
                 self.handle_menu_events()
                 self.draw_menu()
-            elif self.in_settings:
+            elif self.state == GameState.SETTINGS:
                 self.handle_settings_events()
                 self.draw_settings()
-            elif self.paused:
+            elif self.state == GameState.PAUSED:
                 self.handle_pause_events()
                 self.draw_pause()
-            else:
+            elif self.state == GameState.PLAYING:
                 self.handle_events()
-                if not self.game_over_flag and not self.in_menu:
-                    self.update()
+                self.update()
                 self.draw()
+            elif self.state == GameState.GAME_OVER:
+                self.handle_game_over_events()
+                self.draw_game_over()
             pygame.display.flip()
 
     def handle_menu_events(self):
         #Handle main menu events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                self.running = False
+                pygame.quit()
+                exit()
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_UP:
                     current_idx = self.modes.index(self.selected_mode)
@@ -151,18 +151,19 @@ class Game:
                 if event.key == pygame.K_RETURN:
                     self.start_game()
                 if event.key == pygame.K_s:
-                    self.in_menu = False
-                    self.in_settings = True
+                    self.state = GameState.SETTINGS
                 if event.key == pygame.K_l:
                     self.load_game()
                 if event.key == pygame.K_ESCAPE:
-                    self.running = False
+                    pygame.quit()
+                    exit()
 
     def handle_settings_events(self):
         #Handle settings menu events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                self.running = False
+                pygame.quit()
+                exit()
             if event.type == pygame.KEYDOWN:
                 if self.waiting_for_key:
                     self.key_bindings[self.key_to_rebind] = pygame.key.name(event.key)
@@ -208,63 +209,71 @@ class Game:
                         self.key_to_rebind = "pause"
                         self.waiting_for_key = True
                     if event.key == pygame.K_ESCAPE:
-                        self.in_settings = False
-                        self.in_menu = True
+                        self.state = GameState.MENU
 
     def handle_pause_events(self):
         #Handle pause menu events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                self.running = False
+                pygame.quit()
+                exit()
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_p:
-                    self.paused = False
+                    self.state = GameState.PLAYING
                 if event.key == pygame.K_s:
                     self.save_game()
                 if event.key == pygame.K_ESCAPE:
-                    self.running = False
+                    pygame.quit()
+                    exit()
 
-    def handle_events(self):
+    def handle_game_over_events(self):
         #Handle gameplay events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                self.running = False
+                pygame.quit()
+                exit()
             if event.type == pygame.KEYDOWN:
-                if self.game_over_flag:
-                    if event.key == pygame.K_SPACE:
-                        self.reset()
-                    elif event.key == pygame.K_ESCAPE:
-                        self.running = False
-                else:
-                    key_name = pygame.key.name(event.key)
-                    if key_name == self.key_bindings["rotate_cw"]:
-                        self.rotate_tetromino(clockwise=True)
-                    elif key_name == self.key_bindings["rotate_ccw"]:
-                        self.rotate_tetromino(clockwise=False)
-                    elif key_name == self.key_bindings["hard_drop"]:
-                        self.hard_drop()
-                    elif key_name == self.key_bindings["hold"]:
-                        self.hold_tetromino()
-                    elif key_name == self.key_bindings["pause"]:
-                        self.paused = True
+                if event.key == pygame.K_SPACE:
+                    self.reset()
+                if event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                    exit()
 
-        if not self.game_over_flag:
-            current_time = pygame.time.get_ticks()
-            keys = pygame.key.get_pressed()
-            for key, action in self.key_bindings.items():
-                if key in ["left", "right", "down"]:
-                    key_code = getattr(pygame, "K_" + action.upper(), None)
-                    if key_code and keys[key_code] and current_time - self.last_move_time > self.move_delay:
-                        if key == "left":
-                            self.move_horizontal(-1)
-                        elif key == "right":
-                            self.move_horizontal(1)
-                        elif key == "down":
-                            self.soft_drop()
-                        self.last_move_time = current_time
+    def handle_events(self):
+        #Update game state
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            if event.type == pygame.KEYDOWN:
+                key_name = pygame.key.name(event.key)
+                actions = {
+                    self.key_bindings["rotate_cw"]: lambda: self.rotate_tetromino(clockwise=True),
+                    self.key_bindings["rotate_ccw"]: lambda: self.rotate_tetromino(clockwise=False),
+                    self.key_bindings["hard_drop"]: lambda: self.hard_drop(),
+                    self.key_bindings["hold"]: lambda: self.hold_tetromino(),
+                    self.key_bindings["pause"]: lambda: setattr(self, 'state', GameState.PAUSED)
+                }
+                if key_name in actions:
+                    actions[key_name]()
+
+        current_time = pygame.time.get_ticks()
+        keys = pygame.key.get_pressed()
+        move_actions = {
+            self.key_bindings["left"]: lambda: self.move_horizontal(-1),
+            self.key_bindings["right"]: lambda: self.move_horizontal(1),
+            self.key_bindings["down"]: lambda: self.soft_drop()
+        }
+        for key, action in move_actions.items():
+            if keys[pygame.key.key_code(key)] and current_time - self.last_move_time > self.move_delay:
+                action()
+                self.last_move_time = current_time
 
     def update(self):
         #Update game state
+        if self.state != GameState.PLAYING:
+            return
+
         current_time = pygame.time.get_ticks()
         self.stats["time"] = (current_time - self.start_time) // 1000
 
@@ -298,81 +307,89 @@ class Game:
     def draw(self):
         #Clear screen before rendering
         self.screen.fill(THEMES[self.current_theme]["background"])
-        
-        #Fill background with background colour
         self.game_surface.fill(THEMES[self.current_theme]["background"])
-        
-        if not self.game_over_flag:
-            #Render grid
-            rect = self.grid.draw(self.game_surface, self.current_tetromino if self.current_tetromino else None)
-            if isinstance(rect, pygame.Rect):
-                self.dirty_rects.append(rect.move(20, 20))
-            #Render current tetromino if it exists
+
+        #Render grid and current tetromino if it exists
+        if self.state == GameState.PLAYING:
+            self.grid.draw(self.game_surface, self.current_tetromino if self.current_tetromino else None)
             if self.current_tetromino:
-                rect = self.draw_current_tetromino()
-                if isinstance(rect, pygame.Rect):
-                    self.dirty_rects.append(rect.move(20, 20))
-        self.screen.blit(self.game_surface, (20, 20))
-        if not self.game_over_flag:
+                self.draw_current_tetromino()
+            self.screen.blit(self.game_surface, (20, 20))
             self.draw_ui()
-        else:
-            self.draw_game_over()
 
     def draw_menu(self):
-        #Cleare screen before menu render
+        #Main menu render
         self.screen.fill(THEMES[self.current_theme]["background"])
-        rects = []
-        rects.append(self.draw_text("Tetris", (SCREEN_WIDTH // 2, 100), 24, center=True))
-        rects.append(self.draw_text("Select Mode:", (SCREEN_WIDTH // 2, 200), center=True))
+        self.draw_text("Tetris", (SCREEN_WIDTH // 2, 100), 24, center=True)
+        self.draw_text("Select Mode:", (SCREEN_WIDTH // 2, 200), center=True)
         for i, mode in enumerate(self.modes):
             color = (255, 255, 0) if mode == self.selected_mode else THEMES[self.current_theme]["text"]
-            rects.append(self.draw_text(mode, (SCREEN_WIDTH // 2, 250 + i * 40), center=True, color=color))
-        rects.append(self.draw_text("Press ENTER to start, S for settings, L to load, ESC to quit", (SCREEN_WIDTH // 2, 400), center=True))
-        self.dirty_rects.extend([rect for rect in rects if isinstance(rect, pygame.Rect)])
+            self.draw_text(mode, (SCREEN_WIDTH // 2, 250 + i * 40), center=True, color=color)
+        self.draw_text("Press ENTER to start, S for settings, L to load, ESC to quit", (SCREEN_WIDTH // 2, 400), center=True)
 
     def draw_settings(self):
-        #Clear screen before settings menu render
+        #Settings menu render
         self.screen.fill(THEMES[self.current_theme]["background"])
-        rects = []
-        rects.append(self.draw_text("Settings", (SCREEN_WIDTH // 2, 100), 24, center=True))
-        rects.append(self.draw_text("Select Theme:", (SCREEN_WIDTH // 2, 200), center=True))
+        self.draw_text("Settings", (SCREEN_WIDTH // 2, 100), 24, center=True)
+        self.draw_text("Select Theme:", (SCREEN_WIDTH // 2, 200), center=True)
         for i, theme in enumerate(self.themes):
             color = (255, 255, 0) if theme == self.selected_theme else THEMES[self.current_theme]["text"]
-            rects.append(self.draw_text(theme, (SCREEN_WIDTH // 2, 250 + i * 40), center=True, color=color))
-        rects.append(self.draw_text("Press 1-8 to rebind keys, S to save theme, ESC to return", (SCREEN_WIDTH // 2, 400), center=True))
-        rects.append(self.draw_text("1:Left, 2:Right, 3:Down, 4:Hard Drop, 5:Rotate CW, 6:Rotate CCW, 7:Hold, 8:Pause", (SCREEN_WIDTH // 2, 430), center=True))
+            self.draw_text(theme, (SCREEN_WIDTH // 2, 250 + i * 40), center=True, color=color)
+        self.draw_text("Press 1-8 to rebind keys, S to save theme, ESC to return", (SCREEN_WIDTH // 2, 400), center=True)
+        self.draw_text("1:Left, 2:Right, 3:Down, 4:Hard Drop, 5:Rotate CW, 6:Rotate CCW, 7:Hold, 8:Pause", (SCREEN_WIDTH // 2, 430), center=True)
         if self.waiting_for_key:
-            rects.append(self.draw_text(f"Press key for {self.key_to_rebind}", (SCREEN_WIDTH // 2, 460), center=True))
-        self.dirty_rects.extend([rect for rect in rects if isinstance(rect, pygame.Rect)])
+            self.draw_text(f"Press key for {self.key_to_rebind}", (SCREEN_WIDTH // 2, 460), center=True)
 
     def draw_pause(self):
-        #Clear screen before pause menu render
+        #Pause menu render
         self.screen.fill(THEMES[self.current_theme]["background"])
-        rects = []
-        rects.append(self.draw_text("Paused", (SCREEN_WIDTH // 2, 200), 24, center=True))
-        rects.append(self.draw_text("Press P to resume, S to save, ESC to quit", (SCREEN_WIDTH // 2, 300), center=True))
-        self.dirty_rects.extend([rect for rect in rects if isinstance(rect, pygame.Rect)])
+        self.draw_text("Paused", (SCREEN_WIDTH // 2, 200), 24, center=True)
+        self.draw_text("Press P to resume, S to save, ESC to quit", (SCREEN_WIDTH // 2, 300), center=True)
+
+    def draw_game_over(self):
+        #Game over screen render
+        self.screen.fill(THEMES[self.current_theme]["background"])
+        self.draw_text("GAME OVER", (SCREEN_WIDTH // 2, 200), 24, center=True)
+        self.draw_text(f"Final Score: {self.final_score}", (SCREEN_WIDTH // 2, 250), center=True)
+        self.draw_text(f"High Score: {self.high_score}", (SCREEN_WIDTH // 2, 280), center=True)
+        self.draw_text(f"Time: {self.stats['time']}s", (SCREEN_WIDTH // 2, 310), center=True)
+        self.draw_text("Tetrominos:", (SCREEN_WIDTH // 2, 340), center=True)
+        for i, (shape, count) in enumerate(self.stats["tetrominos"].items()):
+            self.draw_text(f"{shape}: {count}", (SCREEN_WIDTH // 2, 360 + i * 20), center=True)
+        self.draw_text("Lines Cleared:", (SCREEN_WIDTH // 2, 520), center=True)
+        for i, (lines, count) in enumerate(self.stats["lines"].items()):
+            self.draw_text(f"{lines} Lines: {count}", (SCREEN_WIDTH // 2, 540 + i * 20), center=True)
+        self.draw_text("Press SPACE to restart or ESC to quit", (SCREEN_WIDTH // 2, 620), center=True)
 
     def draw_ui(self):
-        #Draw UI elements
-        rects = []
-        rects.append(self.draw_text(f"Score: {self.score}", (320, 50)))
-        rects.append(self.draw_text(f"High Score: {self.high_score}", (320, 80)))
-        rects.append(self.draw_text(f"Level: {self.level}", (320, 110)))
-        rects.append(self.draw_text(f"Mode: {self.game_mode}", (320, 140)))
-        rects.append(self.draw_text("Next:", (320, 170)))
-        if self.next_tetromino:
-            rects.append(self.draw_next_tetromino(320, 200))
-        rects.append(self.draw_text("Hold:", (320, 320)))
-        if self.held_tetromino:
-            rects.append(self.draw_held_tetromino(320, 350))
-        self.dirty_rects.extend([rect for rect in rects if isinstance(rect, pygame.Rect)])
+        #UI render
+        self.draw_text(f"Score: {self.score}", (320, 50))
+        self.draw_text(f"High Score: {self.high_score}", (320, 80))
+        self.draw_text(f"Level: {self.level}", (320, 110))
+        self.draw_text(f"Mode: {self.game_mode}", (320, 140))
+        self.draw_text("Next:", (320, 170))
+        self.draw_tetromino_preview(self.next_tetromino, 320, 200)
+        self.draw_text("Hold:", (320, 320))
+        self.draw_tetromino_preview(self.held_tetromino, 320, 350)
+
+    def draw_tetromino_preview(self, tetromino, x, y):
+        #Render tetromino preview
+        if not tetromino:
+            return
+        for dy, row in enumerate(tetromino.shape):
+            for dx, cell in enumerate(row):
+                if cell:
+                    cell_surface = pygame.Surface((18, 18), pygame.SRCALPHA)
+                    cell_surface.set_alpha(THEMES[self.current_theme]["cell_alpha"])
+                    cell_surface.fill((*tetromino.color, THEMES[self.current_theme]["cell_alpha"]))
+                    border_color = tuple(min(255, c + 40) for c in tetromino.color)
+                    pygame.draw.rect(cell_surface, (*border_color, THEMES[self.current_theme]["cell_alpha"]), (0, 0, 18, 18), 1)
+                    self.screen.blit(cell_surface, (x + dx * 20, y + dy * 20))
 
     def draw_current_tetromino(self):
-        #Draw the currently falling tetromino
-        rects = []
+        #Render current tetromino
         if not self.current_tetromino:
-            return pygame.Rect(0, 0, 0, 0)
+            return
         for y, row in enumerate(self.current_tetromino.shape):
             for x, cell in enumerate(row):
                 if cell:
@@ -383,77 +400,20 @@ class Game:
                     cell_surface.fill((*self.current_tetromino.color, THEMES[self.current_theme]["cell_alpha"]))
                     border_color = tuple(min(255, c + 40) for c in self.current_tetromino.color)
                     pygame.draw.rect(cell_surface, (*border_color, THEMES[self.current_theme]["cell_alpha"]), (0, 0, CELL_SIZE - 2, CELL_SIZE - 2), 2)
-                    rect = pygame.Rect(screen_x, screen_y, CELL_SIZE - 2, CELL_SIZE - 2)
-                    self.game_surface.blit(cell_surface, rect)
-                    rects.append(rect)
-        return pygame.Rect.unionall(pygame.Rect(0, 0, 0, 0), rects) if rects else pygame.Rect(0, 0, 0, 0)
-
-    def draw_next_tetromino(self, x, y):
-        #Draw the next tetromino preview
-        rects = []
-        if not self.next_tetromino:
-            return pygame.Rect(0, 0, 0, 0)
-        for dy, row in enumerate(self.next_tetromino.shape):
-            for dx, cell in enumerate(row):
-                if cell:
-                    cell_surface = pygame.Surface((18, 18), pygame.SRCALPHA)
-                    cell_surface.set_alpha(THEMES[self.current_theme]["cell_alpha"])
-                    cell_surface.fill((*self.next_tetromino.color, THEMES[self.current_theme]["cell_alpha"]))
-                    border_color = tuple(min(255, c + 40) for c in self.current_tetromino.color)
-                    pygame.draw.rect(cell_surface, (*border_color, THEMES[self.current_theme]["cell_alpha"]), (0, 0, 18, 18), 1)
-                    rect = pygame.Rect(x + dx * 20, y + dy * 20, 18, 18)
-                    self.screen.blit(cell_surface, rect)
-                    rects.append(rect)
-        return pygame.Rect.unionall(pygame.Rect(0, 0, 0, 0), rects) if rects else pygame.Rect(0, 0, 0, 0)
-
-    def draw_held_tetromino(self, x, y):
-        #Draw the held tetromino preview
-        rects = []
-        if not self.held_tetromino:
-            return pygame.Rect(0, 0, 0, 0)
-        for dy, row in enumerate(self.held_tetromino.shape):
-            for dx, cell in enumerate(row):
-                if cell:
-                    cell_surface = pygame.Surface((18, 18), pygame.SRCALPHA)
-                    cell_surface.set_alpha(THEMES[self.current_theme]["cell_alpha"])
-                    cell_surface.fill((*self.held_tetromino.color, THEMES[self.current_theme]["cell_alpha"]))
-                    border_color = tuple(min(255, c + 40) for c in self.current_tetromino.color)
-                    pygame.draw.rect(cell_surface, (*border_color, THEMES[self.current_theme]["cell_alpha"]), (0, 0, 18, 18), 1)
-                    rect = pygame.Rect(x + dx * 20, y + dy * 20, 18, 18)
-                    self.screen.blit(cell_surface, rect)
-                    rects.append(rect)
-        return pygame.Rect.unionall(pygame.Rect(0, 0, 0, 0), rects) if rects else pygame.Rect(0, 0, 0, 0)
-
-    def draw_game_over(self):
-        #Clear screen before game over render
-        self.screen.fill(THEMES[self.current_theme]["background"])
-        rects = []
-        rects.append(self.draw_text("GAME OVER", (SCREEN_WIDTH // 2, 200), 24, center=True))
-        rects.append(self.draw_text(f"Final Score: {self.final_score}", (SCREEN_WIDTH // 2, 250), center=True))
-        rects.append(self.draw_text(f"High Score: {self.high_score}", (SCREEN_WIDTH // 2, 280), center=True))
-        rects.append(self.draw_text(f"Time: {self.stats['time']}s", (SCREEN_WIDTH // 2, 310), center=True))
-        rects.append(self.draw_text("Tetrominos:", (SCREEN_WIDTH // 2, 340), center=True))
-        for i, (shape, count) in enumerate(self.stats["tetrominos"].items()):
-            rects.append(self.draw_text(f"{shape}: {count}", (SCREEN_WIDTH // 2, 360 + i * 20), center=True))
-        rects.append(self.draw_text("Lines Cleared:", (SCREEN_WIDTH // 2, 520), center=True))
-        for i, (lines, count) in enumerate(self.stats["lines"].items()):
-            rects.append(self.draw_text(f"{lines} Lines: {count}", (SCREEN_WIDTH // 2, 540 + i * 20), center=True))
-        rects.append(self.draw_text("Press SPACE to restart or ESC to quit", (SCREEN_WIDTH // 2, 620), center=True))
-        self.dirty_rects.extend([rect for rect in rects if isinstance(rect, pygame.Rect)])
+                    self.game_surface.blit(cell_surface, (screen_x, screen_y))
 
     def draw_text(self, text, position, size=18, color=None, center=False):
-        #Render text
+        #Render in-game text
         if color is None:
             color = THEMES[self.current_theme]["text"]
         font = self.menu_font if size > 18 else self.font
         text_surface = font.render(text, True, color)
         text_rect = text_surface.get_rect(center=position) if center else text_surface.get_rect(topleft=position)
         self.screen.blit(text_surface, text_rect)
-        return text_rect
 
     def start_game(self):
-        #Start the game
-        self.in_menu = False
+        #Launch game
+        self.state = GameState.PLAYING
         self.game_mode = self.selected_mode
         self.fall_speed = GAME_MODES[self.game_mode]["fall_speed"]
         self.current_tetromino = self.bag.get_next()
@@ -470,14 +430,14 @@ class Game:
         pygame.display.flip()
 
     def move_horizontal(self, direction):
-        #Move tetromino horizontally
+        #Move tetromino horizontaly
         new_x = self.current_tetromino.x + direction
         if self.grid.is_valid_position(self.current_tetromino, new_x, self.current_tetromino.y):
             self.current_tetromino.x = new_x
             self.locked = False
 
     def rotate_tetromino(self, clockwise=True):
-        #Rotate tetromino
+        #Tetromino rotation
         self.sounds["rotate"].play()
         success = (self.current_tetromino.rotate_clockwise(self.grid) if clockwise
                    else self.current_tetromino.rotate_counterclockwise(self.grid))
@@ -487,7 +447,7 @@ class Game:
             self.sounds["rotate"].stop()
 
     def soft_drop(self):
-        #Perform soft drop
+        #Preform soft drop
         if self.move_vertical():
             self.score += 1 * self.level
             self.fall_time = pygame.time.get_ticks()
@@ -504,7 +464,7 @@ class Game:
         self.fix_tetromino()
 
     def hold_tetromino(self):
-        #Swap or hold tetromino
+        #Hold tetromino in place
         if not self.can_hold:
             return
         self.sounds["rotate"].play()
@@ -573,7 +533,7 @@ class Game:
     def game_over(self):
         #Trigger game over
         self.sounds["game_over"].play()
-        self.game_over_flag = True
+        self.state = GameState.GAME_OVER
         self.final_score = self.score
         if self.score > self.high_score:
             self.high_score = self.score
@@ -581,7 +541,7 @@ class Game:
 
     def reset(self):
         #Reset game state
-        self.game_over_flag = False
+        self.state = GameState.PLAYING
         self.score = 0
         self.level = 1
         self.lines_cleared = 0
@@ -609,6 +569,7 @@ class Game:
                     return int(f.read().strip())
             except (ValueError, IOError):
                 return 0
+        return 0
 
     def save_high_score(self):
         #Save high score
@@ -628,12 +589,13 @@ class Game:
             logging.error(f"Failed to save game: {e}")
 
     def load_game(self):
+        #Load save file
         if os.path.exists("save_game.json"):
             try:
                 with open("save_game.json", "r") as f:
                     save_data = json.load(f)
                 SaveGame.load(self, save_data)
-                self.in_menu = False
+                self.state = GameState.PLAYING
                 self.start_time = pygame.time.get_ticks() - (self.stats["time"] * 1000)
             except Exception as e:
                 logging.error(f"Failed to load game: {e}")

@@ -139,7 +139,6 @@ DEFAULT_KEY_BINDINGS = {
 #ADDITIONAL SETTINGS
 # =============================================
 PREVIEW_SCALE = 0.6         #Preview scale
-WALL_KICK_ENABLED = True    #Wall Kick enabler
 
 # =============================================
 #PATHS
